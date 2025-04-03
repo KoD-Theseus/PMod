@@ -66,8 +66,9 @@ public class ProfitCommand extends CommandBase {
                 break;
 
             case "check":
-                double profit = ProfitTrackerModII.getProfit();
-                sender.sendMessage(new TextComponentString("§aTotal profit: " + profit + " coins."));
+                totalProfit = 
+                sender.sendMessage(new TextComponentString("§aTotal profit: " + totalProfit + " coins."));
+                sender.sendMessage(new TextComponentString("§aRate: " + (totalProfit / ((System.currentTimeMillis() - startTime) / 1000)) + " coins/second."));
                 break;
 
             default:
@@ -92,6 +93,18 @@ public class ProfitCommand extends CommandBase {
 @Mod("profittrackermodii")
 public class ProfitTrackerModII {
 
+    private final ItemTracker itemTracker = new ItemTracker(); // Create an instance of ItemTracker
+
+    public ProfitTrackerModII() {
+        MinecraftForge.EVENT_BUS.register(this);
+        MinecraftForge.EVENT_BUS.register(itemTracker); // Register ItemTracker to the event bus
+    }
+
+    @Mod.EventHandler
+    public void init(FMLInitializationEvent event) {
+        ClientCommandHandler.instance.registerCommand(new ProfitCommand());
+    }
+
     public ProfitTrackerModII() {
         MinecraftForge.EVENT_BUS.register(this);
     }
@@ -111,104 +124,103 @@ public class ProfitTrackerModII {
 
     public static void pauseStopwatch() {
         long elapsedTime = System.currentTimeMillis() - startTime;
-        totalProfit += calculateProfit(elapsedTime);
+
+        // Correctly retrieve the item counts from the ItemTracker instance
+        Map<String, Integer> itemCounts = itemTracker.getItemCounts();
+
+        // Pass the itemCounts to the calculateProfit method
+        totalProfit = calculateTotalProfit(itemCounts);
+
         startTime = 0;
     }
 
     public static void resumeStopwatch() {
         startTime = System.currentTimeMillis();
     }
-
-    public static double getProfit() {
-        return totalProfit;
-    }
-
-    private static double calculateProfit(long elapsedTime) {
-        // Example profit calculation logic
-        return elapsedTime / 1000.0 * 10; // 10 coins per second
-    }
-
-    private void startStopwatch(String category) {
-        fetchPlayerCollections(category);
-        startTime = System.currentTimeMillis();
-        Minecraft.getInstance().player.sendMessage(new StringTextComponent("Stopwatch started for " + category + "!"));
-    }
-
-    private void calculateProfitFromChat() {
-        MinecraftForge.EVENT_BUS.register(new Object() {
-            @SubscribeEvent
-            public void onChatMessage(net.minecraftforge.client.event.ClientChatReceivedEvent event) {
-                String message = event.getMessage().getString();
+    public class ProfitTracker {
     
-                // Check if the message contains the word "sacks"
-                if (message.contains("sacks")) {
-                    try {
-                        // Example message: "10 Enchanted Diamonds added to your sacks"
-                        String[] parts = message.split(" ");
-                        int quantity = Integer.parseInt(parts[0]); // Extract quantity
-                        String material = parts[1] + " " + parts[2]; // Extract material (e.g., "Enchanted Diamonds")
-                        if (parts.length < 3) {
+        // This map holds the materials and their respective counts in the player's inventory.
+        private Map<String, Integer> itemCounts;
+    
+        public ProfitTracker(Map<String, Integer> itemCounts) {
+            this.itemCounts = itemCounts;
+        }
+    
+        private double getPricePerCollection(String material) {
+            try {
+                // Hypixel API key
+                String apiKey = "<KEY>"; // Replace with your actual API key
+                
+                // Construct the URL to query the Hypixel API
+                String apiUrl = "https://api.hypixel.net/skyblock/bazaar?key=" + apiKey;
+                
+                // Establish the HTTP connection
+                URL url = new URL(apiUrl);
+                HttpURLConnection connection = (HttpURLConnection) url.openConnection();
+                connection.setRequestMethod("GET"); // Set the request method to GET
+                
+                // Check the response code
+                if (connection.getResponseCode() == 200) {
+                    // Read the response from the Hypixel API
+                    InputStreamReader reader = new InputStreamReader(connection.getInputStream());
+                    JsonObject jsonResponse = JsonParser.parseReader(reader).getAsJsonObject();
+                    reader.close();
+                    
+                    // Check if the response was successful
+                    if (jsonResponse.has("success") && jsonResponse.get("success").getAsBoolean()) {
+                        // Access Bazaar products data
+                        JsonObject products = jsonResponse.getAsJsonObject("products");
+                        
+                        // Check if the material exists in the Bazaar data
+                        if (products.has(material)) {
+                            JsonObject materialData = products.getAsJsonObject(material);
+                            JsonObject quickStatus = materialData.getAsJsonObject("quick_status");
+                            
+                            // Return the sell price of the material
+                            return quickStatus.get("sellPrice").getAsDouble();
+                        } else {
+                            // Notify the player if the material is not found
                             Minecraft.getInstance().player.sendMessage(new StringTextComponent(
-                                "Unexpected message format: " + message));
-                            return;
+                                "Material not found in Bazaar: " + material));
+                            return 0.0;
                         }
-                        // Calculate profit based on material and quantity
-                        double pricePerUnit = getPricePerCollection(material);
-                        if (pricePerUnit == null|| pricePerUnit == 0.0) {
-                            Minecraft.getInstance().player.sendMessage(new StringTextComponent(
-                                "Material not available in Bazaar: " + material));
-                        }
-                        double profit = quantity * pricePerUnit;
-    
-                        // Update total profit
-                        totalProfit += profit;
-    
-                        // Notify the player
+                    } else {
+                        // Notify the player if the API response indicates failure
                         Minecraft.getInstance().player.sendMessage(new StringTextComponent(
-                            "Processed: " + quantity + " " + material + " | Profit: " + profit + " coins"));
-                    } catch (Exception e) {
-                        // Handle parsing errors
-                    Minecraft.getInstance().player.sendMessage(new StringTextComponent(
-                            "Error processing message"));
+                            "Failed to fetch Bazaar data. API response indicates failure."));
+                        return 0.0;
                     }
-                    } 
-                    else {
-                    // Ignore messages that don't contain "sacks"
-                    return;
-                }
-            }
-        });
-    }
-    private void getPricePerCollection(String material) {
-        try {
-            String apiUrl = "https://api.hypixel.net/skyblock/bazaar";
-            HttpURLConnection connection = (HttpURLConnection) new URL(apiUrl).openConnection();
-            connection.setRequestMethod("GET");
-
-            if (connection.getResponseCode() == 200) {
-                InputStreamReader reader = new InputStreamReader(connection.getInputStream());
-                JsonObject jsonResponse = JsonParser.parseReader(reader).getAsJsonObject();
-                reader.close();
-
-                JsonObject products = jsonResponse.getAsJsonObject("products");
-                if (products.has(material)) {
-                    JsonObject materialData = products.getAsJsonObject(material);
-                    JsonObject quickStatus = materialData.getAsJsonObject("quick_status");
-                    return quickStatus.get("sellPrice").getAsDouble(); // Return the sell price
                 } else {
+                    // Notify the player if the HTTP response code is not 200
                     Minecraft.getInstance().player.sendMessage(new StringTextComponent(
-                        "Material not found in Bazaar: " + material));
+                        "Failed to fetch Bazaar data. HTTP Response Code: " + connection.getResponseCode()));
                     return 0.0;
                 }
-            } else {
+            } catch (Exception e) {
+                // Handle exceptions and notify the player
                 Minecraft.getInstance().player.sendMessage(new StringTextComponent(
-                    "Failed to fetch Bazaar data. HTTP Response Code: " + connection.getResponseCode()));
+                    "Error fetching Bazaar data: " + e.getMessage()));
+                e.printStackTrace();
                 return 0.0;
             }
-        } catch (Exception e) {
-            Minecraft.getInstance().player.sendMessage(new StringTextComponent(
-                "Error fetching Bazaar data: " + e.getMessage()));
-            e.printStackTrace();
-            return 0.0;
         }
-}}
+    
+        // This method calculates the total profit based on the materials in itemCounts
+        public double calculateTotalProfit() {    
+            // Iterate through each material in the itemCounts map
+            for (Map.Entry<String, Integer> entry : itemCounts.entrySet()) {
+                String material = entry.getKey();  // Get the material name
+                int quantity = entry.getValue();   // Get the material quantity
+    
+                // Get the price per item from the Bazaar
+                double pricePerItem = getPricePerCollection(material);
+    
+                // Calculate the total value for this material and add it to the total profit
+                totalProfit += pricePerItem * quantity;
+            }
+    
+            // Return the total profit
+            return totalProfit;
+        }
+    }    
+}
