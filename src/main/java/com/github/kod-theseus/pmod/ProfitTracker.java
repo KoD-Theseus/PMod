@@ -15,45 +15,22 @@ import net.minecraft.client.Minecraft;
 public class ProfitTracker {
     private Map<String, Integer> itemCounts;
 
-    public ProfitTracker(Map<String, Integer> itemCounts) {
-        this.itemCounts = itemCounts;
+    private final ItemTracker itemTracker;
+
+    public ProfitTracker(ItemTracker itemTracker) {
+        this.itemTracker = itemTracker;
+        this.itemCounts = itemTracker.getItemCounts();
     }
 
     // Pass the ICommandSender as a parameter to send messages to the player
     public void refreshBazaarPricesAsync(ICommandSender sender) {
         CompletableFuture.runAsync(() -> {
             try {
-                String apiUrl = "https://api.hypixel.net/skyblock/bazaar";
-                URL url = new URL(apiUrl);
-                HttpURLConnection connection = (HttpURLConnection) url.openConnection();
-                connection.setRequestMethod("GET");
+                ProfitCommand.bazaarPriceCache.refreshBazaarPrices();
 
-                if (connection.getResponseCode() == 200) {
-                    InputStreamReader reader = new InputStreamReader(connection.getInputStream());
-                    JsonParser jsonParser = new JsonParser();
-                    JsonObject jsonResponse = jsonParser.parse(reader).getAsJsonObject();
-                    reader.close();
-
-                    if (jsonResponse.has("success") && jsonResponse.get("success").getAsBoolean()) {
-                        JsonObject products = jsonResponse.getAsJsonObject("products");
-
-                        // Send chat message safely to the main thread
-                        Minecraft.getMinecraft().addScheduledTask(() -> {
-                            sender.addChatMessage(new ChatComponentText("Bazaar prices updated successfully!"));
-                        });
-
-                    } else {
-                        Minecraft.getMinecraft().addScheduledTask(() -> {
-                            sender.addChatMessage(new ChatComponentText("Failed to fetch Bazaar data. API response indicates failure."));
-                        });
-                    }
-                } else {
-                    int responseCode = connection.getResponseCode();
-
-                    Minecraft.getMinecraft().addScheduledTask(() -> {
-                        sender.addChatMessage(new ChatComponentText("Failed to fetch Bazaar data. HTTP Response Code: " + responseCode));
-                    });
-                }
+                Minecraft.getMinecraft().addScheduledTask(() -> {
+                    sender.addChatMessage(new ChatComponentText("Bazaar prices updated successfully!"));
+                });
             } catch (Exception e) {
                 ProfitTrackerModII.LOGGER.error("Error fetching Bazaar data", e);
 
@@ -74,6 +51,10 @@ public class ProfitTracker {
             String material = entry.getKey();
             int quantity = entry.getValue();
             double pricePerItem = bazaarPriceCache.getPrice(material);
+            if (pricePerItem == 0.0) {
+                ProfitTrackerModII.LOGGER.warn("Price unavailable for material: " + material);
+                continue;
+            }
             profit += pricePerItem * quantity;
         }
         return profit;

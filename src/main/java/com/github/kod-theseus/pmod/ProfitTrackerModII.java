@@ -15,31 +15,25 @@ import java.io.File;
 public class ProfitTrackerModII {
     public static final Logger LOGGER = LogManager.getLogger(ProfitTrackerModII.class);
     private final BazaarPriceCache bazaarPriceCache = new BazaarPriceCache();
-    private static String apiKey; // Declare the apiKey variable
+
+    // Initializing Bazaar data during preInit
 
     @Mod.EventHandler
     public void preInit(FMLPreInitializationEvent event) {
-        // Load API Key from Configuration
+        // Remove API key configuration loading.
         Configuration config = new Configuration(new File(event.getModConfigurationDirectory(), "profittrackermodii.cfg"));
         config.load();
-
-        // Define the key field
-        apiKey = config.getString("API Key", "general", "", "Your Hypixel API Key");
-
         config.save();
 
-        // Log the API Key during initialization to verify it's loaded
-        if (apiKey == null || apiKey.isEmpty()) {
-            LOGGER.warn("No API key found in the configuration file. Some features may not work.");
-        } else {
-            LOGGER.info("API key loaded successfully.");
-        }
+        // Refresh Bazaar data at initialization
+        bazaarPriceCache.refreshBazaarPrices();
 
         // Register commands
         ClientCommandHandler.instance.registerCommand(new ProfitCommand());
         ClientCommandHandler.instance.registerCommand(new ItemTrackerCommand());
         MinecraftForge.EVENT_BUS.register(new ItemTracker());
     }
+
 
     public static void sendPlayerChat(String message) {
         // Ensure thePlayer is not null before sending chat messages
@@ -50,7 +44,4 @@ public class ProfitTrackerModII {
         }
     }
 
-    public static String getApiKey() {
-        return apiKey;
-    }
 }

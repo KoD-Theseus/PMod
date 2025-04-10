@@ -1,5 +1,53 @@
 package com.github.kodtheseus.forgetemplate;
 
+public class SackChange {
+    private final String internalName;
+    private final int delta;
+    private final String[] sacks;
+
+    public SackChange(String internalName, int delta, String[] sacks) {
+        this.internalName = internalName;
+        this.delta = delta;
+        this.sacks = sacks;
+    }
+
+    public String getInternalName() {
+        return internalName;
+    }
+
+    public int getDelta() {
+        return delta;
+    }
+
+    public String[] getSacks() {
+        return sacks;
+    }
+}
+import java.util.List;
+
+public class SackChangeEvent {
+    private final List<SackChange> sackChanges;
+    private final boolean otherItemsAdded;
+    private final boolean otherItemsRemoved;
+
+    public SackChangeEvent(List<SackChange> sackChanges, boolean otherItemsAdded, boolean otherItemsRemoved) {
+        this.sackChanges = sackChanges;
+        this.otherItemsAdded = otherItemsAdded;
+        this.otherItemsRemoved = otherItemsRemoved;
+    }
+
+    public List<SackChange> getSackChanges() {
+        return sackChanges;
+    }
+
+    public boolean hasOtherItemsAdded() {
+        return otherItemsAdded;
+    }
+
+    public boolean hasOtherItemsRemoved() {
+        return otherItemsRemoved;
+    }
+}
 import net.minecraft.client.Minecraft;
 import net.minecraft.event.HoverEvent;
 import net.minecraft.util.ChatComponentText;
@@ -24,14 +72,14 @@ public class ItemTracker {
     // Start the tracker
     public void startTracker() {
         trackingActive = true;
-        sendPlayerMessage("§a[ItemTracker] Tracking started."); // Green-colored message
+        Minecraft.getMinecraft().thePlayer.addChatMessage(new ChatComponentText("§a[ItemTracker] Tracking started.")); // Green-colored message
         LOGGER.info("Item tracking started.");
     }
 
     // Stop the tracker
     public void stopTracker() {
         trackingActive = false;
-        sendPlayerMessage("§c[ItemTracker] Tracking stopped."); // Red-colored message
+        Minecraft.getMinecraft().thePlayer.addChatMessage(new ChatComponentText("§c[ItemTracker] Tracking stopped.")); // Red-colored message
         LOGGER.info("Item tracking stopped.");
     }
 
@@ -42,9 +90,12 @@ public class ItemTracker {
 
     // Reset tracking data
     public void resetTracker() {
+        // Clear the itemCounts map
         itemCounts.clear();
-        sendPlayerMessage("§e[ItemTracker] Tracking data has been reset."); // Yellow-colored message
-        LOGGER.info("Tracking data has been reset.");
+
+        // Notify the player and log the reset
+        Minecraft.getMinecraft().thePlayer.addChatMessage(new ChatComponentText("§e[ItemTracker] Tracking data has been reset.")); // Yellow-colored message
+        LOGGER.info("Item tracking data has been cleared. The itemCounts map is now empty.");
     }
 
     /**
@@ -63,12 +114,17 @@ public class ItemTracker {
             // Extract the hover text content
             String hoverText = hoverEvent.getValue().getUnformattedText();
 
+            if (hoverText == null || hoverText.isEmpty()) {
+                LOGGER.warn("Hover text is null or empty. Skipping parsing.");
+                return;
+            }
+
             // Log hover text for debugging
             LOGGER.info("Hover Text Detected: " + hoverText);
 
             // If "[Sacks]" is detected in hover text, parse it
             if (hoverText.contains("[Sacks]")) {
-                parseSacksMessage(hoverText);
+                parseSackChanges(hoverText);
             }
         } else {
             // Log if there's no hover event found for debugging
@@ -77,12 +133,97 @@ public class ItemTracker {
     }
 
     /**
-     * Parse and extract the [Sacks] components (materials and quantities) from the hover text.
-     * @param hoverText The full hover text containing "[Sacks]".
+     * Parses hover text to extract and handle sack changes directly.
+     *
+     * @param hoverText The text to parse.
      */
-    private void parseSacksMessage(String hoverText) {
-        // Example parsing logic (Adjust according to your hover text structure)
-        LOGGER.info("Parsing Sacks Message: " + hoverText);
+    private void parseSackChanges(String hoverText) {
+        // Ensure hoverText is not null before proceeding
+        if (hoverText == null || hoverText.isEmpty()) {
+            LOGGER.warn("Cannot parse sack changes: hoverText is null or empty.");
+            return;
+        }
+
+        final String PATTERN = "([a-zA-Z_]+) -\\s*(-?\\d+)"; // Matches "MaterialName - Amount"
+        List<SackChange> changes = new ArrayList<>();
+
+        Pattern regex = Pattern.compile(PATTERN);
+        Matcher matcher = regex.matcher(hoverText);
+
+        LOGGER.info("Starting to parse sack changes from hoverText.");
+        while (matcher.find()) {
+            try {
+                String internalName = matcher.group(1);
+                int delta = Integer.parseInt(matcher.group(2));
+                String[] sacks = hoverText.contains("[Sacks]") ? new String[]{"Main Sack"} : new String[0];
+
+                SackChange sackChange = new SackChange(internalName, delta, sacks);
+                changes.add(sackChange);
+            } catch (Exception ex) {
+                LOGGER.error("Error parsing sack change: " + matcher.group(), ex);
+            }
+        }
+
+        if (changes.isEmpty()) {
+            LOGGER.warn("No sack changes found in hoverText.");
+            return;
+        }
+
+        handleSackChangeEvent(new SackChangeEvent(changes));
+    }
+
+    /**
+     * Parses hover text to extract sack changes and returns a SackChangeEvent object.
+     *
+     * @param hoverText The text to parse.
+     * @return The generated SackChangeEvent, or null if parsing fails.
+     */
+    private SackChangeEvent parseSackChanges(String hoverText) {
+        // Ensure hoverText is not null before proceeding
+        if (hoverText == null || hoverText.isEmpty()) {
+            LOGGER.warn("Cannot parse sack changes: hoverText is null or empty.");
+            return null;
+        }
+
+        // Example regex pattern (adjust to fit actual hover text format)
+        final String PATTERN = "([a-zA-Z_]+) -\\s*(-?\\d+)"; // Matches "MaterialName - Amount"
+        List<SackChange> changes = new ArrayList<>();
+
+        Pattern regex = Pattern.compile(PATTERN);
+        Matcher matcher = regex.matcher(hoverText);
+
+        LOGGER.info("Starting to parse sack changes from hoverText.");
+        while (matcher.find()) {
+            try {
+                String internalName = matcher.group(1);
+                int delta = Integer.parseInt(matcher.group(2));
+                String[] sacks = hoverText.contains("[Sacks]") ? new String[]{"Main Sack"} : new String[0];
+
+
+                SackChange sackChange = new SackChange(internalName, delta, sacks);
+                changes.add(sackChange);
+            } catch (Exception ex) {
+                LOGGER.error("Error parsing sack change: " + matcher.group(), ex);
+            }
+        }
+
+        if (changes.isEmpty()) {
+            LOGGER.warn("No sack changes found in hoverText.");
+        }
+
+        return changes.isEmpty() ? null : new SackChangeEvent(changes);
+        private void handleSackChangeEvent (SackChangeEvent event){
+            LOGGER.info("SackChangeEvent received: " + event.getSackChanges());
+
+            for (SackChange change : event.getSackChanges()) {
+                String material = change.getInternalName();
+                int count = change.getDelta();
+                itemCounts.put(material, itemCounts.getOrDefault(material, 0) + count);
+
+                LOGGER.info("Material: " + material + ", Adjusted Count: " + count);
+            }
+
+            LOGGER.info("Parsing Sacks Message: " + hoverText);
 
         // Example: Extract each line from the hover text
         String[] lines = hoverText.split("\n");
@@ -109,11 +250,4 @@ public class ItemTracker {
         }
     }
 
-    /**
-     * Sends a chat message to the player.
-     * @param message The message to send.
-     */
-    private void sendPlayerMessage(String message) {
-        Minecraft.getMinecraft().thePlayer.addChatMessage(new ChatComponentText(message));
-    }
 }

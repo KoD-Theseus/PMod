@@ -10,7 +10,11 @@ import net.minecraft.util.BlockPos;
 import org.jetbrains.annotations.NotNull;
 
 public class ProfitCommand implements ICommand {
-    private static final String apiKey = "2631dcaa-5b2a-402e-8cf7-e3f1594c7225";
+
+    // Shared instances to prevent desynchronization
+    private static final Stopwatch stopwatch = new Stopwatch();
+    private static final ProfitTracker profitTracker = new ProfitTracker();
+    private static final BazaarPriceCache bazaarPriceCache = new BazaarPriceCache();
 
     @Override
     public String getCommandName() {
@@ -26,46 +30,61 @@ public class ProfitCommand implements ICommand {
         return Collections.emptyList();
     }
     @Override
+    @Override
     public void processCommand(ICommandSender sender, String[] args) {
         if (args.length == 0) {
             sender.addChatMessage(new ChatComponentText("§cPlease specify a subcommand: start, pause, resume, or check."));
             return;
         }
-        Stopwatch stopwatch = new Stopwatch();
-        ProfitTracker profitTracker = new ProfitTracker(new HashMap<>());
-        BazaarPriceCache bazaarPriceCache = new BazaarPriceCache();
+        // Using shared singleton instances
         switch (args[0].toLowerCase()) {
             case "start":
-                stopwatch.start();
-                sender.addChatMessage(new ChatComponentText("§aStopwatch started!"));
+                ProfitCommand.stopwatch.start();
+                itemTracker.startTracker();
+                sender.addChatMessage(new ChatComponentText("§aStopwatch and item tracking started!"));
                 break;
             case "pause":
-                stopwatch.stop();
+                ProfitCommand.stopwatch.stop();
                 sender.addChatMessage(new ChatComponentText("§aStopwatch paused!"));
                 if (bazaarPriceCache.isCacheExpired()) {
-                    bazaarPriceCache.refreshBazaarPrices("<KEY>"); // Replace with an actual API key
+                    bazaarPriceCache.refreshBazaarPrices(); // No API key needed
                 }
-                double totalProfitPause = profitTracker.calculateTotalProfit(bazaarPriceCache);
+                if (bazaarPriceCache.isCacheExpired()) {
+                    bazaarPriceCache.refreshBazaarPrices(); // No API key needed
+                }
+                double totalProfitPause = ProfitCommand.profitTracker.calculateTotalProfit(ProfitCommand.bazaarPriceCache);
                 sender.addChatMessage(new ChatComponentText("§aTotal profit: " + totalProfitPause + " coins."));
                 break;
             case "resume":
-                stopwatch.start();
+                ProfitCommand.stopwatch.start();
                 sender.addChatMessage(new ChatComponentText("§aStopwatch resumed!"));
                 break;
             case "check":
-                if (bazaarPriceCache.isCacheExpired()) {
-                    bazaarPriceCache.refreshBazaarPrices("<KEY>");
+                if (ProfitCommand.bazaarPriceCache.isCacheExpired()) {
+                    ProfitCommand.bazaarPriceCache.refreshBazaarPrices(); // No API key needed
                 }
-                double totalProfitCheck = profitTracker.calculateTotalProfit(bazaarPriceCache);
-                double elapsedTime = stopwatch.getElapsedTimeInSeconds();
+                double totalProfitCheck = ProfitCommand.profitTracker.calculateTotalProfit(ProfitCommand.bazaarPriceCache);
+                double elapsedTime = ProfitCommand.stopwatch.getElapsedTimeInSeconds();
                 sender.addChatMessage(new ChatComponentText("§aTotal profit: " + totalProfitCheck + " coins."));
                 sender.addChatMessage(new ChatComponentText("§aRate: " + (elapsedTime > 0 ? (totalProfitCheck / elapsedTime) : 0) + " coins/second."));
                 break;
+            case "stop":
+                stopwatch.stop();
+                itemTracker.stopTracker();
+                sender.addChatMessage(new ChatComponentText("§cItem tracking and stopwatch stopped!"));
+                break;
+            case "reset":
+                stopwatch.stop();
+                profitTracker.reset();
+                itemTracker.resetTracker();
+                sender.addChatMessage(new ChatComponentText("§eStopwatch, profit tracking, and item tracking data reset."));
+                break;
             default:
-                sender.addChatMessage(new ChatComponentText("§aUnknown subcommand. Use start, pause, resume, or check."));
+                sender.addChatMessage(new ChatComponentText("§aUnknown subcommand. Use start, pause, resume, check, stop, or reset."));
                 break;
         }
     }
+
 
     @Override
     public boolean canCommandSenderUseCommand(ICommandSender sender) {

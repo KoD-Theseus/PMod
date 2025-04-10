@@ -15,11 +15,10 @@ public class BazaarPriceCache {
     private long lastUpdateTime = 0;
     private final long CACHE_EXPIRATION_TIME = 5 * 60 * 1000; // 5 minutes in milliseconds
 
-    public void refreshBazaarPrices(String apiKey) {
+    public void refreshBazaarPrices() { // Removed API key parameter
         CompletableFuture.runAsync(() -> {
             try {
-                String apiUrl = "https://api.hypixel.net/skyblock/bazaar?key=" + ProfitTrackerModII.getApiKey()
-                        ;
+                String apiUrl = "https://api.hypixel.net/skyblock/bazaar"; // Removed API key
                 URL url = new URL(apiUrl);
                 HttpURLConnection connection = (HttpURLConnection) url.openConnection();
                 connection.setRequestMethod("GET");
